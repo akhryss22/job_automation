@@ -1,0 +1,34 @@
+name: Weekly Job Monitor & Posting Automation
+
+on:
+  schedule:
+    # Runs every Friday at 9:00 AM UTC (5:00 PM standard time for PH/SG)
+    - cron: '0 9 * * 5'
+  workflow_dispatch:
+    # Allows manually running the workflow from the Actions tab on GitHub
+
+jobs:
+  run-automation:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Run Job Monitor Script
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      run: python main.py
