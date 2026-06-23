@@ -14,6 +14,7 @@ CRITERIA = """
 2. Fresh grads or people who didn't finish college (no strict 4-year degree requirements, or explicitly welcoming non-traditional backgrounds).
 3. AWS/Cloud focus (uses AWS services, cloud administration, cloud support, or general cloud infrastructure).
 4. Junior to mid level (maximum of 2 years experience required, entry-level, associate, or junior roles).
+5. Posted maximum of 5 days ago (if date information is available. Discard older jobs).
 """
 
 def get_gemini_client():
