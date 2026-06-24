@@ -1,13 +1,38 @@
 import json
 import logging
+import time
 from google import genai
 from google.genai import types
 import config
 
 logger = logging.getLogger(__name__)
 
-# Use the recommended modern Gemini model
-MODEL_NAME = "gemini-2.5-flash"
+# gemini-1.5-flash: 1,500 requests/day free tier (vs 20/day for 2.5-flash)
+MODEL_NAME = "gemini-1.5-flash"
+
+MAX_RETRIES = 3
+
+def call_gemini_with_retry(client, prompt):
+    """Calls Gemini with exponential backoff on 429 rate limit errors."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            return response
+        except Exception as e:
+            err = str(e)
+            if "429" in err and attempt < MAX_RETRIES - 1:
+                wait = 15 * (attempt + 1)  # 15s, 30s, 45s
+                logger.warning(f"Rate limited by Gemini (429). Retrying in {wait}s... (attempt {attempt+1}/{MAX_RETRIES})")
+                time.sleep(wait)
+            else:
+                raise
+    return None
 
 CRITERIA = """
 CANDIDATE PROFILE:
@@ -66,13 +91,7 @@ Example output:
 """
     try:
         client = get_gemini_client()
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-        )
+        response = call_gemini_with_retry(client, prompt)
         jobs = json.loads(response.text)
         logger.info(f"Gemini extracted {len(jobs)} jobs from raw page for {company_name}")
         return jobs
@@ -128,13 +147,7 @@ Example:
 """
     try:
         client = get_gemini_client()
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-        )
+        response = call_gemini_with_retry(client, prompt)
         selected_jobs = json.loads(response.text)
         logger.info(f"Gemini matched {len(selected_jobs)} jobs for {company_name} against criteria.")
         return selected_jobs
