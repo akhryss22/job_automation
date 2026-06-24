@@ -3,6 +3,7 @@ import urllib.parse
 import logging
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -12,91 +13,118 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
 }
 
-def clean_linkedin_url_to_company_name(url):
+def extract_linkedin_handle(url):
     """
-    Extracts company handle or name from a LinkedIn company URL.
+    Extracts the company handle from a LinkedIn company URL.
     e.g., https://www.linkedin.com/company/ecloudvalley-digital-tech/ -> ecloudvalley-digital-tech
     """
     url = url.rstrip('/')
     match = re.search(r'/company/([^/?#]+)', url)
     if match:
-        handle = match.group(1)
-        # Replace hyphens with spaces to make it a search keyword
-        return handle.replace('-', ' ')
+        return match.group(1)
     return None
 
-def fetch_linkedin_jobs_via_guest_api(company_name):
+def is_within_5_days(date_str_or_datetime):
     """
-    Scrapes job listings from LinkedIn's public guest job search endpoint.
-    No login required.
+    Checks if a relative date string OR a datetime string fits maximum of 5 days ago.
+    Handles:
+    - ISO datetime strings: "2026-06-22T12:34:56"
+    - Relative strings: "2 days ago", "3 hours ago", "1 week ago"
     """
-    query = urllib.parse.quote(company_name)
-    # Add f_TPR=r604800 to restrict LinkedIn results to the past week
-    url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={query}&f_TPR=r604800&start=0"
-    
-    logger.info(f"Fetching LinkedIn guest jobs for: {company_name} from {url}")
-    
+    if not date_str_or_datetime:
+        return True  # Default to include if no date info
+
+    s = str(date_str_or_datetime).lower().strip()
+
+    # Try to parse as ISO datetime (from datetime attribute)
+    try:
+        # Trim timezone or trailing chars
+        iso_str = re.sub(r'[Zz]$', '', s)
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=5)
+        return dt >= cutoff
+    except Exception:
+        pass
+
+    # Handle relative strings
+    if any(unit in s for unit in ["hour", "minute", "second", "now", "today", "yesterday", "just now"]):
+        return True
+
+    match = re.search(r'(\d+)\s+day', s)
+    if match:
+        return int(match.group(1)) <= 5
+
+    if any(unit in s for unit in ["week", "month", "year"]):
+        return False
+
+    return True  # Include if unparseable
+
+def fetch_linkedin_company_jobs(handle, company_name):
+    """
+    Scrapes the public LinkedIn company jobs page directly using the company handle.
+    No login required. Works without the broken guest API.
+    """
+    url = f"https://www.linkedin.com/company/{handle}/jobs/"
+    logger.info(f"Fetching LinkedIn company jobs page for {company_name}: {url}")
+
     try:
         response = requests.get(url, headers=HEADERS, timeout=15)
+        if response.status_code == 999:
+            logger.warning(f"LinkedIn blocked request for {company_name} (status 999). Skipping.")
+            return []
         if response.status_code != 200:
-            logger.warning(f"Failed to fetch LinkedIn jobs. Status: {response.status_code}")
+            logger.warning(f"Failed to fetch {url}. Status: {response.status_code}")
             return []
 
         soup = BeautifulSoup(response.text, "html.parser")
-        job_cards = soup.find_all("li")
-        
-        jobs = []
-        for card in job_cards:
-            title_tag = card.find("h3", class_="base-search-card__title")
-            link_tag = card.find("a", class_="base-search-card__full-link")
-            company_tag = card.find("h4", class_="base-search-card__subtitle")
-            location_tag = card.find("span", class_="job-search-card__location")
-            time_tag = card.find("time")
-            
-            if title_tag and link_tag:
-                title = title_tag.get_text(strip=True)
-                link = link_tag.get("href", "").split("?")[0]  # Clean tracking parameters
-                company = company_tag.get_text(strip=True) if company_tag else company_name
-                location = location_tag.get_text(strip=True) if location_tag else ""
-                
-                # Parse date text
-                post_date = time_tag.get_text(strip=True) if time_tag else ""
-                
-                # Check if it fits the 5 days requirement
-                if is_within_5_days(post_date):
-                    jobs.append({
-                        "title": title,
-                        "link": link,
-                        "company": company,
-                        "location": location,
-                        "post_date": post_date,
-                        "source": "LinkedIn Public Search"
-                    })
-        logger.info(f"Found and filtered {len(jobs)} recent jobs for {company_name} on LinkedIn.")
-        return jobs
-    except Exception as e:
-        logger.error(f"Error scraping LinkedIn guest API for {company_name}: {e}")
-        return []
 
-def is_within_5_days(date_str):
-    """Checks if a relative date string fits maximum of 5 days ago."""
-    if not date_str:
-        return True # Default to True if no date is specified
-        
-    date_str = date_str.lower().strip()
-    if any(unit in date_str for unit in ["hour", "minute", "second", "now", "today", "yesterday"]):
-        return True
-        
-    import re
-    match = re.search(r'(\d+)\s+day', date_str)
-    if match:
-        days = int(match.group(1))
-        return days <= 5
-        
-    if any(unit in date_str for unit in ["week", "month", "year"]):
-        return False
-        
-    return True
+        jobs = []
+        # Look for job links directly
+        job_links = soup.find_all("a", href=lambda x: x and "/jobs/view/" in x)
+
+        seen = set()
+        for a in job_links:
+            href = a.get("href", "")
+            # Clean tracking params
+            clean_link = href.split("?")[0]
+            if clean_link in seen:
+                continue
+            seen.add(clean_link)
+
+            # Try to find title from this anchor or parent
+            title = a.get_text(strip=True)
+            if not title:
+                parent = a.find_parent()
+                if parent:
+                    h = parent.find(["h3", "h4", "span"])
+                    title = h.get_text(strip=True) if h else ""
+
+            # Find time tag nearby
+            parent_li = a.find_parent("li")
+            time_tag = parent_li.find("time") if parent_li else None
+            date_text = time_tag.get_text(strip=True) if time_tag else ""
+            datetime_attr = time_tag.get("datetime", "") if time_tag else ""
+
+            # Use the ISO datetime attribute for more accurate filtering
+            date_for_filter = datetime_attr or date_text
+
+            if title and is_within_5_days(date_for_filter):
+                jobs.append({
+                    "title": title,
+                    "link": clean_link,
+                    "company": company_name,
+                    "post_date": date_text or datetime_attr,
+                    "source": "LinkedIn Company Page"
+                })
+
+        logger.info(f"Found {len(jobs)} recent jobs (≤5 days) for {company_name} on LinkedIn company page.")
+        return jobs
+
+    except Exception as e:
+        logger.error(f"Error scraping LinkedIn company page for {company_name}: {e}")
+        return []
 
 def fetch_careers_page_jobs(url):
     """
@@ -109,28 +137,26 @@ def fetch_careers_page_jobs(url):
         if response.status_code != 200:
             logger.warning(f"Failed to fetch {url}. Status: {response.status_code}")
             return None
-        
+
         soup = BeautifulSoup(response.text, "html.parser")
-        
+
         # Remove noisy tags
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
-            
+
         # Extract links with context
         links = []
         for a in soup.find_all("a", href=True):
             href = a["href"]
             text = a.get_text(strip=True)
-            # Resolve relative URLs
             full_href = urllib.parse.urljoin(url, href)
             if text and len(href) > 1 and not href.startswith("javascript:") and not href.startswith("mailto:"):
                 links.append({"text": text, "url": full_href})
-                
+
         # Get page plain text
         text_content = soup.get_text(separator=" ", strip=True)
-        # Normalize whitespace
-        text_content = re.sub(r'\s+', ' ', text_content)[:10000] # Cap text to avoid massive inputs
-        
+        text_content = re.sub(r'\s+', ' ', text_content)[:10000]
+
         return {
             "text": text_content,
             "links": links
@@ -144,23 +170,16 @@ def get_jobs_for_company(company_name, url):
     Decides the scrape strategy based on URL type and returns job listings or page text.
     """
     is_linkedin = "linkedin.com" in url
-    
+
     if is_linkedin:
-        # Resolve company search term
-        search_term = clean_linkedin_url_to_company_name(url) or company_name
-        jobs = fetch_linkedin_jobs_via_guest_api(search_term)
-        if jobs:
+        handle = extract_linkedin_handle(url)
+        if handle:
+            jobs = fetch_linkedin_company_jobs(handle, company_name)
             return {"type": "jobs_list", "data": jobs}
-        
-        # Try search term without cleaning if handle extraction fails
-        if search_term != company_name:
-            jobs = fetch_linkedin_jobs_via_guest_api(company_name)
-            if jobs:
-                return {"type": "jobs_list", "data": jobs}
-        
-        return {"type": "jobs_list", "data": []}
+        else:
+            logger.warning(f"Could not extract LinkedIn handle from URL: {url}. Skipping.")
+            return {"type": "jobs_list", "data": []}
     else:
-        # Standard career portal scraping
         content = fetch_careers_page_jobs(url)
         if content:
             return {"type": "raw_page", "data": content}
