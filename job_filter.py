@@ -10,21 +10,54 @@ MAX_RETRIES = 3
 CRITERIA = """
 CANDIDATE PROFILE:
 Graduates of the AWS re/Start programme — a rigorous, hands-on cloud training program.
-They are diverse: career switchers, upskillers, people from non-IT backgrounds who have retrained.
-Most are AWS Certified Cloud Practitioners or well-prepared to be.
-They have practical lab experience but may have limited formal IT work history (0-2 years max).
+They are diverse: career switchers, upskillers, and people from non-IT backgrounds who retrained into tech.
+Most hold or are preparing for AWS Certified Cloud Practitioner. They have hands-on lab experience
+but limited formal IT work history (0–2 years max).
 
 FILTERING RULES (all must pass):
-1. LOCATION: The role must be based in Metro Manila, Philippines OR be fully Remote work open to Philippines-based applicants.
-   - REJECT any role that is overseas, onsite abroad, or does not mention Philippines / Metro Manila / remote PH.
-   - If location is unclear or not mentioned, lean toward REJECTION.
-2. EXPERIENCE: Junior to mid-level only. Maximum 2 years of experience required.
-   - Reject roles that require 3+ years of experience.
-3. EDUCATION: No strict 4-year CS/IT degree requirement. Roles that welcome bootcamp graduates, non-traditional backgrounds, or equivalent experience are preferred.
-4. ROLE TYPE: Cloud, AWS, IT support, sysadmin, DevOps, and junior tech roles are ideal.
-   However, also accept transferable roles where our alumni's skills apply — e.g. technical consulting, IT sales/pre-sales, tech support, business analyst (tech-focused), project coordination (IT), etc.
-   Use good judgment: if an AWS-certified career switcher could credibly apply, include it.
+
+1. LOCATION:
+   Accept roles based in ANY of the following:
+   - Metro Manila / NCR, Philippines
+   - Cebu City / Visayas, Philippines
+   - Northern Luzon (e.g. Baguio, Clark, Pampanga), Philippines
+   - Fully Remote work open to Philippines-based applicants
+   REJECT: overseas, onsite abroad, or no Philippines mention at all.
+   If location is unclear, lean toward REJECTION.
+
+2. ROLE RELEVANCE / SKILL MATCH:
+   Ideal direct roles:
+   - Cloud Support Associate, Cloud Engineer (Junior), Cloud Administrator
+   - Systems/Infrastructure Associate, Junior DevOps, Cloud Operations
+   - NOC Engineer, Network Support Engineer, Linux Administrator
+   - Technical Support Engineer, IT Helpdesk, Application Support
+   - Solutions/Implementation Associate, IT Operations
+   Also accept strong transferable roles:
+   - Technical Consultant, Pre-Sales Engineer, IT Sales
+   - IT Project Coordinator, Business Analyst (tech-focused)
+   - Technical Trainer, IT Analyst
+   Use judgment: if an AWS-certified career switcher could credibly apply, INCLUDE it.
+   REJECT: purely managerial, finance-only, HR-only, or unrelated sales (e.g. real estate).
+
+3. ENTRY-LEVEL SIGNALS — Prioritize roles with these keywords:
+   Junior, Associate, Entry-level, Fresh graduate, 0–1 year, 0–2 years experience, No experience required
+   REJECT roles that require:
+   - 3+ years of experience
+   - Senior or Mid-level designation
+   - Multiple mandatory certifications (e.g. CCNP + AWS + Azure all required)
+
+4. HIRING INTENT — Prefer roles that show active hiring:
+   - Recently posted (within 5 days)
+   - Specific job description (not vague evergreen "we're always hiring" pages)
+   - Multiple openings at the company is a positive signal
+
 5. DATE: Posted within the last 5 days. Discard older postings.
+
+COMPANY PRIORITY TAG — add a "priority" field to each result:
+   - "Partner" if the company is a known AWS re/Start hiring partner
+   - "Target" if the company is a known target partner being pursued
+   - "Prospect" for all others
+   (If unsure, default to "Prospect")
 """
 
 
@@ -152,25 +185,33 @@ def evaluate_jobs_list(company_name, jobs, max_results=8):
     prompt = f"""
 You are a career placement officer for AWS re/Start programme alumni in the Philippines.
 
-Alumni profile: AWS Certified Cloud Practitioners (or near-certified), career switchers from diverse backgrounds, 0-2 years formal IT work experience.
+Alumni profile: AWS Certified Cloud Practitioners (or near-certified), career switchers
+from diverse backgrounds, 0–2 years formal IT work experience, hands-on cloud lab training.
 
-Evaluate this list of jobs from "{company_name}" strictly against these criteria:
+Evaluate this list of jobs from "{company_name}" strictly against ALL criteria below:
 {CRITERIA}
 
 Jobs list:
 {jobs_data}
 
-IMPORTANT: REJECT any job that is not in Metro Manila or remote-open to Philippines. Overseas roles must be excluded.
+IMPORTANT REMINDERS:
+- Accept roles in Metro Manila, Cebu/Visayas, Northern Luzon, OR fully remote open to Philippines.
+- REJECT overseas roles, 3+ year experience requirements, and purely senior/managerial roles.
+- Prioritize roles with entry-level signals: Junior, Associate, Entry-level, Fresh graduate, 0-2 yrs.
 
 Select up to {max_results} jobs that pass ALL criteria. Return [] if none qualify.
 
 Return a JSON array. Each item must have:
 - "title": job title
 - "link": job URL
-- "reason": 1-sentence reason (mention location + seniority level)
+- "reason": 1-sentence reason mentioning location and seniority level
+- "priority": one of "Partner", "Target", or "Prospect" based on whether this company
+  is a known AWS re/Start hiring partner, a target partner being pursued, or a new prospect
 
 Example:
-[{{"title": "Cloud Support Associate", "link": "https://linkedin.com/jobs/view/123", "reason": "Metro Manila-based entry-level AWS role, 0-1 year experience required."}}]
+[{{"title": "Cloud Support Associate", "link": "https://linkedin.com/jobs/view/123",
+  "reason": "Metro Manila-based, entry-level AWS role, 0-1 year experience required.",
+  "priority": "Partner"}}]
 """
     selected = call_ai(prompt, context=f"— evaluate for {company_name}")
     logger.info(f"AI matched {len(selected)} jobs for {company_name}")
@@ -185,5 +226,7 @@ def format_jobs_caption(company_name, selected_jobs):
     for job in selected_jobs:
         title = job.get("title", "")
         link = job.get("link", "")
-        lines.append(f"- [{title}]({link})")
+        priority = job.get("priority", "")
+        tag = f" [{priority}]" if priority else ""
+        lines.append(f"- [{title}]({link}){tag}")
     return "\n".join(lines)

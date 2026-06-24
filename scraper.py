@@ -13,31 +13,43 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
 }
 
-# Philippines LinkedIn geoId (used in search URL)
+# Philippines LinkedIn geoId
 PH_GEO_ID = "103121230"
 METRO_MANILA_GEO_ID = "105246114"
 
-# Cast a wide net — short keywords work better than long phrases on LinkedIn guest API
-BROAD_SEARCH_KEYWORDS = [
-    "AWS",
-    "cloud engineer",
-    "cloud support",
-    "IT support",
-    "technical support",
-    "sysadmin",
-    "DevOps",
-    "cloud administrator",
-    "junior cloud",
-    "IT helpdesk",
-    "cloud infrastructure",
-    "network administrator",
-    "IT analyst",
-    "solutions consultant",
-    "pre-sales engineer",
-    "technical consultant",
-    "IT project coordinator",
-    "cloud operations",
-    "Linux administrator",
+# Curated list of known PH-based IT companies, cloud employers, and tech recruiters.
+# These are scraped for the Non-Hiring Partners tab since LinkedIn keyword search
+# is blocked. Add or remove handles here to customize.
+# Format: (display_name, linkedin_handle)
+PH_IT_COMPANIES = [
+    # ── Tech Recruiters ──────────────────────────────────
+    ("Monroe Consulting",       "monroe-consulting-group"),
+    ("Hunters Hub",             "hunters-hub-incorporated"),
+    ("Manpower Philippines",    "manpower-group"),
+    ("Adecco",                  "the-adecco-group"),
+    ("Sprout Solutions",        "sprout-solutions"),
+    ("JobsDB Philippines",      "jobsdb"),
+    # ── Telcos & IT Giants ───────────────────────────────
+    ("Globe Telecom",           "globe-telecom"),
+    ("PLDT",                    "pldt"),
+    ("Converge ICT",            "converge-ict"),
+    ("DITO Telecommunity",      "dito-telecommunity-corp"),
+    # ── IT Services / Outsourcing ────────────────────────
+    ("Accenture Philippines",   "accenture-ph"),
+    ("IBM",                     "ibm"),
+    ("DXC Technology",          "dxctechnology"),
+    ("Wipro",                   "wipro"),
+    ("Concentrix",              "concentrix"),
+    ("Stefanini",               "stefanini"),
+    ("MicroSourcing",           "microsourcing"),
+    # ── Cloud / AWS Partners ─────────────────────────────
+    ("Ingram Micro",            "ingram-micro"),
+    ("TD SYNNEX",               "td-synnex"),
+    ("Fujitsu",                 "fujitsu"),
+    ("NTT DATA",                "ntt-data"),
+    ("Logicalis",               "logicalis"),
+    ("Exist Software Labs",     "exist-software-labs"),
+    ("Cloudstaff",              "cloudstaff"),
 ]
 
 
@@ -138,88 +150,33 @@ def fetch_linkedin_company_jobs(handle, company_name):
         return []
 
 
+
 def search_linkedin_broad(max_results=50):
     """
-    Aggressive broad LinkedIn search for AWS re/Start-suitable jobs in Philippines.
-    Tries multiple keyword + location combinations to cast the widest possible net.
+    Scrapes a curated list of known PH IT companies and tech recruiters
+    from their LinkedIn company jobs pages. This is reliable because LinkedIn's
+    keyword search API is blocked, but company page scraping works fine.
     Returns a combined deduplicated list of raw job listings for AI to filter.
     """
-    logger.info("Running broad LinkedIn search for Non-Hiring Partners tab...")
+    logger.info(f"Running broad search across {len(PH_IT_COMPANIES)} curated PH IT companies...")
     all_jobs = []
     seen_links = set()
 
-    # Build list of URLs to try — multiple formats for better coverage
-    search_urls = []
-    for keyword in BROAD_SEARCH_KEYWORDS:
-        q = urllib.parse.quote(keyword)
-        # Format 1: with Philippines geoId
-        search_urls.append(
-            f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
-            f"?keywords={q}&geoId={PH_GEO_ID}&start=0"
-        )
-        # Format 2: with Metro Manila geoId
-        search_urls.append(
-            f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
-            f"?keywords={q}&geoId={METRO_MANILA_GEO_ID}&start=0"
-        )
-        # Format 3: location as text
-        search_urls.append(
-            f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
-            f"?keywords={q}&location=Philippines&start=0"
-        )
-
-    for url in search_urls:
+    for display_name, handle in PH_IT_COMPANIES:
         if len(all_jobs) >= max_results:
             break
         try:
-            response = requests.get(url, headers=HEADERS, timeout=15)
-            if response.status_code != 200:
-                logger.debug(f"Search URL returned {response.status_code}: {url[:80]}")
-                continue
-
-            soup = BeautifulSoup(response.text, "html.parser")
-            cards = soup.find_all("li")
-            found_this_url = 0
-
-            for card in cards:
-                title_tag = card.find("h3", class_="base-search-card__title")
-                link_tag = card.find("a", class_="base-search-card__full-link")
-                company_tag = card.find("h4", class_="base-search-card__subtitle")
-                location_tag = card.find("span", class_="job-search-card__location")
-                time_tag = card.find("time")
-
-                if not (title_tag and link_tag):
-                    continue
-
-                clean_link = link_tag.get("href", "").split("?")[0]
-                if clean_link in seen_links:
-                    continue
-                seen_links.add(clean_link)
-
-                date_attr = time_tag.get("datetime", "") if time_tag else ""
-                date_text = time_tag.get_text(strip=True) if time_tag else ""
-                location = location_tag.get_text(strip=True) if location_tag else ""
-
-                # Collect ALL results — let Groq/Gemini AI do the filtering
-                # (no pre-filtering by date here so we get maximum results)
-                all_jobs.append({
-                    "title": title_tag.get_text(strip=True),
-                    "link": clean_link,
-                    "company": company_tag.get_text(strip=True) if company_tag else "",
-                    "location": location,
-                    "post_date": date_text or date_attr,
-                    "source": "LinkedIn Search"
-                })
-                found_this_url += 1
-
-            if found_this_url > 0:
-                logger.info(f"Search found {found_this_url} jobs: {url[:80]}...")
-
+            jobs = fetch_linkedin_company_jobs(handle, display_name)
+            for job in jobs:
+                link = job.get("link", "")
+                if link and link not in seen_links:
+                    seen_links.add(link)
+                    all_jobs.append(job)
         except Exception as e:
-            logger.error(f"Error during broad search URL {url[:60]}: {e}")
+            logger.error(f"Error scraping {display_name}: {e}")
             continue
 
-    logger.info(f"Broad search collected {len(all_jobs)} unique raw jobs to send to AI.")
+    logger.info(f"Broad search collected {len(all_jobs)} unique raw jobs across all companies.")
     return all_jobs[:max_results]
 
 
