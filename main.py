@@ -77,11 +77,11 @@ def process_non_hiring_tab(sheet, worksheet, max_results=10):
     except Exception as e:
         logger.warning(f"Could not clear previous results: {e}")
 
-    # Broad search
-    raw_jobs = scraper.search_linkedin_broad(max_results=30)
+    # Multi-source search: LinkedIn company pages + Indeed Philippines
+    raw_jobs = scraper.search_broad(max_results=60)
 
     if not raw_jobs:
-        logger.info("Broad search returned no results.")
+        logger.info("All sources returned no results.")
         worksheet.update(range_name="A2", values=[["No results found this week."]])
         return
 

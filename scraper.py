@@ -154,11 +154,9 @@ def fetch_linkedin_company_jobs(handle, company_name):
 def search_linkedin_broad(max_results=50):
     """
     Scrapes a curated list of known PH IT companies and tech recruiters
-    from their LinkedIn company jobs pages. This is reliable because LinkedIn's
-    keyword search API is blocked, but company page scraping works fine.
-    Returns a combined deduplicated list of raw job listings for AI to filter.
+    from their LinkedIn company jobs pages.
     """
-    logger.info(f"Running broad search across {len(PH_IT_COMPANIES)} curated PH IT companies...")
+    logger.info(f"LinkedIn: Scanning {len(PH_IT_COMPANIES)} curated PH IT companies...")
     all_jobs = []
     seen_links = set()
 
@@ -176,7 +174,140 @@ def search_linkedin_broad(max_results=50):
             logger.error(f"Error scraping {display_name}: {e}")
             continue
 
-    logger.info(f"Broad search collected {len(all_jobs)} unique raw jobs across all companies.")
+    logger.info(f"LinkedIn: collected {len(all_jobs)} jobs.")
+    return all_jobs
+
+
+# Indeed Philippines search keywords and locations
+INDEED_KEYWORDS = [
+    "cloud support",
+    "AWS cloud",
+    "IT support",
+    "technical support engineer",
+    "NOC engineer",
+    "junior devops",
+    "IT helpdesk",
+    "systems administrator",
+    "cloud administrator",
+    "IT operations",
+]
+INDEED_LOCATIONS = [
+    "Metro Manila",
+    "Cebu City",
+    "Baguio",
+    "Clark Pampanga",
+]
+
+
+def search_indeed_ph(max_results=50):
+    """
+    Scrapes Indeed Philippines for recent IT/cloud job postings across PH locations.
+    Uses fromage=5 to get only last 5 days of postings.
+    """
+    logger.info("Indeed PH: Starting broad search...")
+    all_jobs = []
+    seen_links = set()
+
+    for keyword in INDEED_KEYWORDS:
+        if len(all_jobs) >= max_results:
+            break
+        for location in INDEED_LOCATIONS:
+            if len(all_jobs) >= max_results:
+                break
+            try:
+                q = urllib.parse.quote(keyword)
+                loc = urllib.parse.quote(location)
+                url = f"https://ph.indeed.com/jobs?q={q}&l={loc}&sort=date&fromage=5"
+                response = requests.get(url, headers=HEADERS, timeout=15)
+
+                if response.status_code != 200:
+                    logger.debug(f"Indeed blocked for '{keyword}' in {location}: {response.status_code}")
+                    continue
+
+                soup = BeautifulSoup(response.text, "html.parser")
+                cards = soup.find_all("div", attrs={"data-testid": "slider_item"})
+                if not cards:
+                    cards = soup.find_all("div", class_=lambda c: c and "job_seen_beacon" in c)
+
+                found = 0
+                for card in cards:
+                    title_tag = card.find("h2")
+                    company_tag = card.find("span", {"data-testid": "company-name"})
+                    location_tag = card.find("div", {"data-testid": "text-location"})
+                    link_tag = card.find("a", href=lambda h: h and "/rc/clk" in str(h))
+                    if not link_tag:
+                        link_tag = card.find("a", href=lambda h: h and "/pagead/clk" in str(h))
+
+                    if not title_tag:
+                        continue
+
+                    title = title_tag.get_text(strip=True)
+
+                    # Build Indeed job URL from jk param
+                    raw_href = link_tag.get("href", "") if link_tag else ""
+                    jk_match = re.search(r'jk=([a-f0-9]+)', raw_href)
+                    if jk_match:
+                        clean_link = f"https://ph.indeed.com/viewjob?jk={jk_match.group(1)}"
+                    elif raw_href:
+                        clean_link = "https://ph.indeed.com" + raw_href if raw_href.startswith("/") else raw_href
+                    else:
+                        continue
+
+                    if clean_link in seen_links:
+                        continue
+                    seen_links.add(clean_link)
+
+                    all_jobs.append({
+                        "title": title,
+                        "company": company_tag.get_text(strip=True) if company_tag else "",
+                        "location": location_tag.get_text(strip=True) if location_tag else location,
+                        "link": clean_link,
+                        "source": "Indeed PH"
+                    })
+                    found += 1
+
+                if found > 0:
+                    logger.info(f"Indeed: '{keyword}' in {location} → {found} jobs")
+
+            except Exception as e:
+                logger.error(f"Indeed error for '{keyword}' in {location}: {e}")
+                continue
+
+    logger.info(f"Indeed PH: collected {len(all_jobs)} jobs.")
+    return all_jobs
+
+
+def search_broad(max_results=60):
+    """
+    Multi-source broad search for Non-Hiring Partners tab.
+    Combines LinkedIn company pages + Indeed Philippines.
+    Returns deduplicated list of raw jobs for AI to filter.
+    """
+    logger.info("=== Starting multi-source broad search ===")
+    all_jobs = []
+    seen_links = set()
+
+    sources = [
+        ("LinkedIn",  lambda: search_linkedin_broad(max_results=40)),
+        ("Indeed PH", lambda: search_indeed_ph(max_results=40)),
+    ]
+
+    for source_name, fetch_fn in sources:
+        try:
+            jobs = fetch_fn()
+            added = 0
+            for job in jobs:
+                link = job.get("link", "")
+                if link and link not in seen_links:
+                    seen_links.add(link)
+                    all_jobs.append(job)
+                    added += 1
+            logger.info(f"{source_name}: added {added} unique jobs to pool.")
+        except Exception as e:
+            logger.error(f"{source_name} source failed: {e}")
+            continue
+
+    logger.info(f"Multi-source total: {len(all_jobs)} unique raw jobs collected.")
     return all_jobs[:max_results]
 
 

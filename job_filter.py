@@ -155,17 +155,25 @@ You are a job filter for AWS re/Start programme alumni in the Philippines.
 Filter this list of jobs from "{company_name}" using these criteria:
 {CRITERIA}
 
+CREDIBILITY CHECK — also reject postings that show ANY of these red flags:
+- No company name or vague company identity
+- Unrealistic pay promises ("earn 50k/day", "no experience, earn big")
+- Upfront payment or investment required
+- Purely commission-only with no base salary for a tech role
+- MLM / networking / recruitment chain patterns
+- Extremely vague job description with no real responsibilities listed
+
 Jobs:
 {jobs_data}
 
-Return a JSON array of up to {max_results} jobs that pass ALL criteria.
+Return a JSON array of up to {max_results} jobs that pass ALL criteria AND credibility check.
 Return [] if none qualify.
 
 Each item must have ONLY:
 - "title": job title
 - "link": job URL
 
-Example: [{{"title": "Cloud Support Associate", "link": "https://linkedin.com/jobs/view/123"}}]
+Example: [{{"title": "Cloud Support Associate", "link": "https://ph.indeed.com/viewjob?jk=abc123"}}]
 """
     selected = call_ai(prompt, context=f"— evaluate for {company_name}")
     logger.info(f"AI matched {len(selected)} jobs for {company_name}")
