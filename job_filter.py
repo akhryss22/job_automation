@@ -1,38 +1,11 @@
 import json
 import logging
 import time
-from google import genai
-from google.genai import types
 import config
 
 logger = logging.getLogger(__name__)
 
-# gemini-1.5-flash: 1,500 requests/day free tier (vs 20/day for 2.5-flash)
-MODEL_NAME = "gemini-1.5-flash"
-
 MAX_RETRIES = 3
-
-def call_gemini_with_retry(client, prompt):
-    """Calls Gemini with exponential backoff on 429 rate limit errors."""
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
-            return response
-        except Exception as e:
-            err = str(e)
-            if "429" in err and attempt < MAX_RETRIES - 1:
-                wait = 15 * (attempt + 1)  # 15s, 30s, 45s
-                logger.warning(f"Rate limited by Gemini (429). Retrying in {wait}s... (attempt {attempt+1}/{MAX_RETRIES})")
-                time.sleep(wait)
-            else:
-                raise
-    return None
 
 CRITERIA = """
 CANDIDATE PROFILE:
@@ -54,27 +27,101 @@ FILTERING RULES (all must pass):
 5. DATE: Posted within the last 5 days. Discard older postings.
 """
 
-def get_gemini_client():
-    """Initializes and returns the GenAI Client."""
-    # Pass api_key explicitly if set in config, otherwise it defaults to GEMINI_API_KEY env var
+
+# ── Groq (primary) ────────────────────────────────────────
+def call_groq(prompt):
+    """Calls Groq API (llama-3.3-70b). Returns parsed JSON or raises."""
+    from groq import Groq
+    client = Groq(api_key=config.GROQ_API_KEY)
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
+            text = response.choices[0].message.content
+            # Groq with json_object mode returns a single JSON object; wrap if needed
+            parsed = json.loads(text)
+            # Normalize: our prompts expect a list; Groq may return {"jobs": [...]}
+            if isinstance(parsed, list):
+                return parsed
+            for key in parsed:
+                if isinstance(parsed[key], list):
+                    return parsed[key]
+            return []
+        except Exception as e:
+            err = str(e)
+            if ("429" in err or "rate_limit" in err.lower()) and attempt < MAX_RETRIES - 1:
+                wait = 15 * (attempt + 1)
+                logger.warning(f"Groq rate limited. Retrying in {wait}s... ({attempt+1}/{MAX_RETRIES})")
+                time.sleep(wait)
+            else:
+                raise
+
+
+# ── Gemini (fallback) ──────────────────────────────────────
+def call_gemini(prompt):
+    """Calls Gemini 1.5-flash as fallback. Returns parsed JSON list or raises."""
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=config.GEMINI_API_KEY)
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json")
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            err = str(e)
+            if "429" in err and attempt < MAX_RETRIES - 1:
+                wait = 15 * (attempt + 1)
+                logger.warning(f"Gemini rate limited. Retrying in {wait}s... ({attempt+1}/{MAX_RETRIES})")
+                time.sleep(wait)
+            else:
+                raise
+
+
+def call_ai(prompt, context=""):
+    """
+    Calls Groq first; falls back to Gemini if Groq fails.
+    Returns a parsed Python list.
+    """
+    if config.GROQ_API_KEY:
+        try:
+            result = call_groq(prompt)
+            logger.info(f"Groq OK {context}")
+            return result
+        except Exception as e:
+            logger.warning(f"Groq failed ({e}). Falling back to Gemini...")
+
     if config.GEMINI_API_KEY:
-        return genai.Client(api_key=config.GEMINI_API_KEY)
-    return genai.Client()
+        try:
+            result = call_gemini(prompt)
+            logger.info(f"Gemini fallback OK {context}")
+            return result
+        except Exception as e:
+            logger.error(f"Gemini also failed ({e}).")
+
+    logger.error("No AI provider available.")
+    return []
+
+
+# ── Public functions ───────────────────────────────────────
 
 def extract_jobs_from_raw_page(company_name, page_text, links):
-    """
-    Uses Gemini to extract job openings from a raw careers webpage.
-    """
-    if not config.GEMINI_API_KEY:
-        logger.warning("Gemini API key is missing. Skipping raw page job extraction.")
+    """Uses AI to extract job listings from a raw careers webpage."""
+    if not config.GROQ_API_KEY and not config.GEMINI_API_KEY:
+        logger.warning("No AI API key configured. Skipping extraction.")
         return []
 
-    # Format links for the prompt
-    formatted_links = "\n".join([f"- {l['text']}: {l['url']}" for l in links[:150]]) # Cap links list
+    formatted_links = "\n".join([f"- {l['text']}: {l['url']}" for l in links[:150]])
 
     prompt = f"""
-You are a job scraper assistant. Analyze the following webpage text and links from the careers portal of the company "{company_name}".
-Extract all open job listings. For each job, identify its title and direct application/details URL.
+You are a job scraper. Extract all open job listings from this careers page for "{company_name}".
 
 Webpage Text:
 {page_text[:8000]}
@@ -82,95 +129,61 @@ Webpage Text:
 Webpage Links:
 {formatted_links}
 
-Respond ONLY with a JSON list of objects, each containing "title" and "link".
-Example output:
-[
-  {{"title": "Junior Cloud Support Associate", "link": "https://company.com/careers/job1"}},
-  {{"title": "IT Helpdesk Specialist", "link": "https://company.com/careers/job2"}}
-]
+Return a JSON array of objects with "title" and "link" fields only.
+If no jobs found, return an empty array [].
+Example: [{{"title": "Cloud Support Associate", "link": "https://company.com/jobs/1"}}]
 """
-    try:
-        client = get_gemini_client()
-        response = call_gemini_with_retry(client, prompt)
-        jobs = json.loads(response.text)
-        logger.info(f"Gemini extracted {len(jobs)} jobs from raw page for {company_name}")
-        return jobs
-    except Exception as e:
-        logger.error(f"Error extracting jobs with Gemini for {company_name}: {e}")
-        return []
+    jobs = call_ai(prompt, context=f"— extract for {company_name}")
+    logger.info(f"AI extracted {len(jobs)} jobs from raw page for {company_name}")
+    return jobs
+
 
 def evaluate_jobs_list(company_name, jobs, max_results=8):
-    """
-    Evaluates a list of jobs against the criteria using Gemini.
-    Filters and returns the selected jobs and formats them into a final caption.
-    """
-    if not config.GEMINI_API_KEY:
-        logger.warning("Gemini API key is missing. Skipping job evaluation.")
+    """Filters a list of jobs against our criteria using AI. Returns matching jobs."""
+    if not config.GROQ_API_KEY and not config.GEMINI_API_KEY:
+        logger.warning("No AI API key configured. Skipping evaluation.")
         return []
 
     if not jobs:
         return []
 
-    # Prepare jobs data for Gemini
     jobs_data = json.dumps(jobs, indent=2)
 
     prompt = f"""
 You are a career placement officer for AWS re/Start programme alumni in the Philippines.
 
-Alumni profile: AWS Certified Cloud Practitioners (or near-certified), career switchers and upskillers from diverse backgrounds, hands-on practical training, 0-2 years formal IT work experience.
+Alumni profile: AWS Certified Cloud Practitioners (or near-certified), career switchers from diverse backgrounds, 0-2 years formal IT work experience.
 
-Evaluate this list of jobs from "{company_name}" and apply the following criteria strictly:
+Evaluate this list of jobs from "{company_name}" strictly against these criteria:
 {CRITERIA}
 
 Jobs list:
 {jobs_data}
 
-IMPORTANT: REJECT any job that is not in Metro Manila or remote-open to Philippines. Do not include overseas roles.
+IMPORTANT: REJECT any job that is not in Metro Manila or remote-open to Philippines. Overseas roles must be excluded.
 
-Select a maximum of {max_results} jobs that pass ALL criteria above.
-For each selected job, provide a brief reason why it fits our alumni.
+Select up to {max_results} jobs that pass ALL criteria. Return [] if none qualify.
 
-Respond ONLY with a JSON list. If NO jobs pass all criteria, return an empty list [].
-Each object must contain:
-- "title": Job title
-- "link": Job URL  
-- "reason": 1-sentence reason why it fits (mention location + experience level)
+Return a JSON array. Each item must have:
+- "title": job title
+- "link": job URL
+- "reason": 1-sentence reason (mention location + seniority level)
 
 Example:
-[
-  {{
-    "title": "Cloud Support Associate",
-    "link": "https://linkedin.com/jobs/view/123",
-    "reason": "Metro Manila-based, entry-level AWS role requiring 0-1 year experience."
-  }}
-]
+[{{"title": "Cloud Support Associate", "link": "https://linkedin.com/jobs/view/123", "reason": "Metro Manila-based entry-level AWS role, 0-1 year experience required."}}]
 """
-    try:
-        client = get_gemini_client()
-        response = call_gemini_with_retry(client, prompt)
-        selected_jobs = json.loads(response.text)
-        logger.info(f"Gemini matched {len(selected_jobs)} jobs for {company_name} against criteria.")
-        return selected_jobs
-    except Exception as e:
-        logger.error(f"Error evaluating jobs with Gemini for {company_name}: {e}")
-        return []
+    selected = call_ai(prompt, context=f"— evaluate for {company_name}")
+    logger.info(f"AI matched {len(selected)} jobs for {company_name}")
+    return selected
+
 
 def format_jobs_caption(company_name, selected_jobs):
-    """
-    Formats the selected jobs into the exact format requested:
-    "Company Name
-    Role (embedded with the link to the linkedin job post/portal/page post)"
-    
-    Using standard markdown link formatting for the spreadsheet cell.
-    """
+    """Formats selected jobs as a plain text caption for the Google Sheet cell."""
     if not selected_jobs:
         return ""
-    
-    caption_lines = [f"{company_name}"]
+    lines = [company_name]
     for job in selected_jobs:
-        title = job.get("title")
-        link = job.get("link")
-        # Format as: - [Role Title](Link)
-        caption_lines.append(f"- [{title}]({link})")
-        
-    return "\n".join(caption_lines)
+        title = job.get("title", "")
+        link = job.get("link", "")
+        lines.append(f"- [{title}]({link})")
+    return "\n".join(lines)

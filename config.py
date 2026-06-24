@@ -1,10 +1,12 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from a .env file if it exists
 load_dotenv()
 
-# Gemini Config
+# Groq (primary — 14,400 req/day free)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+# Gemini (fallback)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Google Sheets Config
