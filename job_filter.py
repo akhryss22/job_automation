@@ -152,6 +152,11 @@ def evaluate_jobs_list(company_name, jobs, max_results=8):
     prompt = f"""
 You are a job filter for AWS re/Start programme alumni in the Philippines.
 
+IMPORTANT CONTEXT: All jobs in this list were already scraped from Philippines-based company
+pages (LinkedIn PH companies) or Indeed Philippines. Location is already pre-filtered.
+Only reject on location if the job explicitly says it is based overseas (e.g. "Singapore",
+"USA", "Dubai") or explicitly requires relocation abroad.
+
 Filter this list of jobs from "{company_name}" using these criteria:
 {CRITERIA}
 
