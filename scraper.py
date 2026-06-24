@@ -24,18 +24,18 @@ METRO_MANILA_GEO_ID = "105246114"
 PH_IT_COMPANIES = [
     # ── Tech Recruiters ──────────────────────────────────
     ("Monroe Consulting",       "monroe-consulting-group"),
-    ("Hunters Hub",             "hunters-hub-incorporated"),
+    ("Hunters Hub",             "hunters-hub"),
     ("Manpower Philippines",    "manpower-group"),
-    ("Adecco",                  "the-adecco-group"),
+    ("Adecco",                  "adecco"),
     ("Sprout Solutions",        "sprout-solutions"),
     ("JobsDB Philippines",      "jobsdb"),
     # ── Telcos & IT Giants ───────────────────────────────
     ("Globe Telecom",           "globe-telecom"),
     ("PLDT",                    "pldt"),
-    ("Converge ICT",            "converge-ict"),
-    ("DITO Telecommunity",      "dito-telecommunity-corp"),
+    ("Converge ICT",            "converge-ict-solutions-inc"),
+    ("DITO Telecommunity",      "dito-telecommunity"),
     # ── IT Services / Outsourcing ────────────────────────
-    ("Accenture Philippines",   "accenture-ph"),
+    ("Accenture Philippines",   "accenture"),
     ("IBM",                     "ibm"),
     ("DXC Technology",          "dxctechnology"),
     ("Wipro",                   "wipro"),
