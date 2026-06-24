@@ -4,98 +4,136 @@ import config
 from sheet_handler import SheetHandler
 import scraper
 import job_filter
-import notifier
 
 # Configure Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger("job_tracker")
 
-def run():
-    logger.info("Starting AWS Re/Start Job Tracker Automation...")
-    
-    # 1. Validate Configuration
-    warnings = config.validate_config()
-    if warnings:
-        for warning in warnings:
-            logger.warning(warning)
-            
-    # 2. Connect to Google Sheets
-    try:
-        sheet = SheetHandler()
-        sheet.init_headers_if_empty()
-        companies = sheet.get_companies_to_scrape()
-    except Exception as e:
-        logger.error(f"Critical error accessing Google Sheets: {e}")
-        logger.error("Exiting automation run.")
-        sys.exit(1)
-        
+# Tab name that triggers the broad LinkedIn search (case-insensitive match)
+NON_HIRING_TAB_KEYWORD = "non-hiring"
+
+
+def process_hiring_partners_tab(sheet, worksheet):
+    """Processes a hiring-partners tab: reads company list, scrapes each, writes results."""
+    companies = sheet.get_companies_to_scrape(worksheet)
     if not companies:
-        logger.info("No companies found in the spreadsheet to scrape. Add companies to Column A and URLs to Column B.")
+        logger.info(f"No companies found in tab '{worksheet.title}'. Skipping.")
         return
 
-    logger.info(f"Loaded {len(companies)} companies to monitor.")
-    all_selected_jobs = []
+    logger.info(f"Tab '{worksheet.title}': {len(companies)} companies to process.")
+    matched_count = 0
 
-    # 3. Process each company
     for item in companies:
         row = item["row"]
         company = item["company"]
         url = item["url"]
-        
-        logger.info(f"Processing row {row}: {company} ({url})")
-        
+
+        logger.info(f"Processing row {row}: {company} ({url or 'no URL - will guess'})")
+
         try:
-            # Scrape jobs/content
             scrape_result = scraper.get_jobs_for_company(company, url)
-            
+
             jobs = []
             if scrape_result["type"] == "jobs_list":
-                raw_jobs = scrape_result["data"]
-                # Evaluate the raw jobs
-                jobs = job_filter.evaluate_jobs_list(company, raw_jobs)
+                jobs = job_filter.evaluate_jobs_list(company, scrape_result["data"])
             elif scrape_result["type"] == "raw_page":
                 page_data = scrape_result["data"]
-                # Extract jobs from raw HTML page using Gemini
-                extracted_jobs = job_filter.extract_jobs_from_raw_page(company, page_data["text"], page_data["links"])
-                # Evaluate the extracted jobs
-                jobs = job_filter.evaluate_jobs_list(company, extracted_jobs)
-                
-            # If jobs matched criteria, update Sheet and save for notifications
+                extracted = job_filter.extract_jobs_from_raw_page(company, page_data["text"], page_data["links"])
+                jobs = job_filter.evaluate_jobs_list(company, extracted)
+
             if jobs:
-                # Format roles into spreadsheet cell format
-                sheet_caption = job_filter.format_jobs_caption(company, jobs)
-                # Write to Column C
-                sheet.update_chosen_roles(row, sheet_caption)
-                
-                # Accumulate for global notifications
-                all_selected_jobs.append({
-                    "company": company,
-                    "jobs": jobs
-                })
+                caption = job_filter.format_jobs_caption(company, jobs)
+                sheet.update_chosen_roles(worksheet, row, caption)
+                matched_count += 1
             else:
-                logger.info(f"No matching roles found for {company} this week.")
-                # Optional: Clear the cell to show it was checked and empty
-                sheet.update_chosen_roles(row, "No matching roles found this week.")
-                
+                logger.info(f"No matching roles found for {company}.")
+                sheet.update_chosen_roles(worksheet, row, "No matching roles found this week.")
+
         except Exception as e:
             logger.error(f"Error processing {company}: {e}", exc_info=True)
-            # Write error indicator to sheet so the user knows
             try:
-                sheet.update_chosen_roles(row, f"Error checking jobs: {str(e)}")
-            except Exception as se:
-                logger.error(f"Failed to write error to sheet: {se}")
+                sheet.update_chosen_roles(worksheet, row, f"Error: {str(e)}")
+            except Exception:
+                pass
 
-    # 4. Final log summary
-    if all_selected_jobs:
-        logger.info(f"Completed run. Wrote matches to Google Sheet for {len(all_selected_jobs)} companies.")
-    else:
-        logger.info("Completed run. No matching job openings found for any company this week.")
+    logger.info(f"Tab '{worksheet.title}' done. {matched_count} companies had matches.")
+
+
+def process_non_hiring_tab(sheet, worksheet, max_results=10):
+    """
+    Processes the Non-Hiring Partners tab: broad LinkedIn search,
+    AI filters top matches, writes results into the tab.
+    """
+    logger.info(f"Tab '{worksheet.title}': Running broad LinkedIn search (max {max_results} results)...")
+
+    # Clear previous results (keep header row)
+    try:
+        worksheet.batch_clear(["A2:D200"])
+    except Exception as e:
+        logger.warning(f"Could not clear previous results: {e}")
+
+    # Broad search
+    raw_jobs = scraper.search_linkedin_broad(max_results=30)
+
+    if not raw_jobs:
+        logger.info("Broad search returned no results.")
+        worksheet.update(range_name="A2", values=[["No results found this week."]])
+        return
+
+    # Filter using same criteria
+    selected = job_filter.evaluate_jobs_list("LinkedIn Broad Search", raw_jobs, max_results=max_results)
+
+    if not selected:
+        logger.info("AI found no matching jobs from broad search.")
+        worksheet.update(range_name="A2", values=[["No matching roles found this week."]])
+        return
+
+    # Write results: Job Title | Company | Link | Why it fits
+    rows = []
+    for job in selected:
+        rows.append([
+            job.get("title", ""),
+            job.get("company", ""),
+            job.get("link", ""),
+            job.get("reason", "")
+        ])
+
+    worksheet.update(range_name="A2", values=rows)
+    logger.info(f"Tab '{worksheet.title}': Wrote {len(rows)} matching jobs.")
+
+
+def run():
+    logger.info("Starting AWS Re/Start Job Tracker...")
+
+    warnings = config.validate_config()
+    for w in warnings:
+        logger.warning(w)
+
+    try:
+        sheet = SheetHandler()
+        worksheets = sheet.get_all_worksheets()
+    except Exception as e:
+        logger.error(f"Critical error accessing Google Sheets: {e}")
+        sys.exit(1)
+
+    logger.info(f"Found {len(worksheets)} tab(s): {[ws.title for ws in worksheets]}")
+
+    for worksheet in worksheets:
+        tab_name = worksheet.title.strip().lower()
+        logger.info(f"--- Processing tab: '{worksheet.title}' ---")
+
+        if NON_HIRING_TAB_KEYWORD in tab_name:
+            process_non_hiring_tab(sheet, worksheet, max_results=10)
+        else:
+            sheet.init_headers_if_empty(worksheet)
+            process_hiring_partners_tab(sheet, worksheet)
+
+    logger.info("All tabs processed. Run complete.")
+
 
 if __name__ == "__main__":
     run()

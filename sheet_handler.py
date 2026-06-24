@@ -34,31 +34,27 @@ class SheetHandler:
     def __init__(self):
         self.client = get_gspread_client()
         self.spreadsheet = self.client.open_by_key(config.SPREADSHEET_ID)
-        # Select first worksheet as default target
-        self.worksheet = self.spreadsheet.get_worksheet(0)
 
-    def get_companies_to_scrape(self):
+    def get_all_worksheets(self):
+        """Returns all worksheet tabs in the spreadsheet."""
+        return self.spreadsheet.worksheets()
+
+    def get_companies_to_scrape(self, worksheet):
         """
-        Reads the spreadsheet and returns target companies and their URLs.
-        Assumes headers:
-        Column A: Company Name
-        Column B: Scrape URL
-        
-        Returns:
-            list of dicts: [{'row': int, 'company': str, 'url': str}]
+        Reads a worksheet tab and returns companies + optional URLs.
+        Column A: Company Name (required)
+        Column B: URL (optional — if missing, LinkedIn search by name is used)
+        Returns: list of dicts: [{'row': int, 'company': str, 'url': str or None}]
         """
-        all_values = self.worksheet.get_all_values()
+        all_values = worksheet.get_all_values()
         if not all_values:
             return []
 
-        # Find header indices (assuming row 1 is header)
         headers = [h.strip().lower() for h in all_values[0]]
-        
-        # Default column indices if headers aren't explicitly named
+
         company_idx = 0
         url_idx = 1
-        
-        # Try to find headers dynamically
+
         for idx, h in enumerate(headers):
             if "company" in h:
                 company_idx = idx
@@ -66,35 +62,31 @@ class SheetHandler:
                 url_idx = idx
 
         companies = []
-        # Row 1 is header, so start from 2 (1-indexed index = idx + 1)
         for idx, row in enumerate(all_values[1:], start=2):
-            if len(row) > max(company_idx, url_idx):
+            if len(row) > company_idx:
                 company_name = row[company_idx].strip()
-                url = row[url_idx].strip()
-                if company_name and url:
+                # URL is optional — blank means LinkedIn search by name
+                url = row[url_idx].strip() if len(row) > url_idx else ""
+                if company_name:
                     companies.append({
                         "row": idx,
                         "company": company_name,
-                        "url": url
+                        "url": url or None  # None = no URL, use LinkedIn search
                     })
         return companies
 
-    def update_chosen_roles(self, row_number, caption, column_letter="C"):
-        """
-        Updates the 'Chosen Roles' caption column for a specific company row.
-        """
+    def update_chosen_roles(self, worksheet, row_number, caption, column_letter="C"):
+        """Updates the matched roles cell for a specific company row."""
         try:
-            # We can also dynamically find Column C or the header "Chosen Roles"
-            # Let's write to Column C by default
-            self.worksheet.update(range_name=f"{column_letter}{row_number}", values=[[caption]])
+            worksheet.update(range_name=f"{column_letter}{row_number}", values=[[caption]])
             logger.info(f"Updated row {row_number} with roles caption.")
         except Exception as e:
             logger.error(f"Error updating sheet row {row_number}: {e}")
             raise e
 
-    def init_headers_if_empty(self):
-        """Initializes headers on an empty worksheet."""
-        all_values = self.worksheet.get_all_values()
+    def init_headers_if_empty(self, worksheet):
+        """Initializes headers on an empty worksheet tab."""
+        all_values = worksheet.get_all_values()
         if not all_values:
-            self.worksheet.update(range_name="A1:C1", values=[["Company Name", "Scrape URL", "Chosen Roles"]])
-            logger.info("Initialized default headers: Company Name, Scrape URL, Chosen Roles")
+            worksheet.update(range_name="A1:C1", values=[["Company Name", "Scrape URL", "Chosen Roles"]])
+            logger.info(f"Initialized default headers on tab: {worksheet.title}")
