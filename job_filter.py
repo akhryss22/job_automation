@@ -10,11 +10,23 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = "gemini-2.5-flash"
 
 CRITERIA = """
-1. Good for our AWS re/start program graduates (entry-level cloud, IT support, sysadmin, junior DevOps).
-2. Fresh grads or people who didn't finish college (no strict 4-year degree requirements, or explicitly welcoming non-traditional backgrounds).
-3. AWS/Cloud focus (uses AWS services, cloud administration, cloud support, or general cloud infrastructure).
-4. Junior to mid level (maximum of 2 years experience required, entry-level, associate, or junior roles).
-5. Posted maximum of 5 days ago (if date information is available. Discard older jobs).
+CANDIDATE PROFILE:
+Graduates of the AWS re/Start programme — a rigorous, hands-on cloud training program.
+They are diverse: career switchers, upskillers, people from non-IT backgrounds who have retrained.
+Most are AWS Certified Cloud Practitioners or well-prepared to be.
+They have practical lab experience but may have limited formal IT work history (0-2 years max).
+
+FILTERING RULES (all must pass):
+1. LOCATION: The role must be based in Metro Manila, Philippines OR be fully Remote work open to Philippines-based applicants.
+   - REJECT any role that is overseas, onsite abroad, or does not mention Philippines / Metro Manila / remote PH.
+   - If location is unclear or not mentioned, lean toward REJECTION.
+2. EXPERIENCE: Junior to mid-level only. Maximum 2 years of experience required.
+   - Reject roles that require 3+ years of experience.
+3. EDUCATION: No strict 4-year CS/IT degree requirement. Roles that welcome bootcamp graduates, non-traditional backgrounds, or equivalent experience are preferred.
+4. ROLE TYPE: Cloud, AWS, IT support, sysadmin, DevOps, and junior tech roles are ideal.
+   However, also accept transferable roles where our alumni's skills apply — e.g. technical consulting, IT sales/pre-sales, tech support, business analyst (tech-focused), project coordination (IT), etc.
+   Use good judgment: if an AWS-certified career switcher could credibly apply, include it.
+5. DATE: Posted within the last 5 days. Discard older postings.
 """
 
 def get_gemini_client():
@@ -84,29 +96,33 @@ def evaluate_jobs_list(company_name, jobs, max_results=8):
     jobs_data = json.dumps(jobs, indent=2)
 
     prompt = f"""
-You are a career placement officer matching candidates with job roles.
-Your candidates are graduates of the AWS re/start program: junior-to-mid level cloud enthusiasts, fresh grads, and self-taught developers (max 2 years experience).
+You are a career placement officer for AWS re/Start programme alumni in the Philippines.
 
-Evaluate the following list of jobs for the company "{company_name}" against these criteria:
+Alumni profile: AWS Certified Cloud Practitioners (or near-certified), career switchers and upskillers from diverse backgrounds, hands-on practical training, 0-2 years formal IT work experience.
+
+Evaluate this list of jobs from "{company_name}" and apply the following criteria strictly:
 {CRITERIA}
 
 Jobs list:
 {jobs_data}
 
-Select a maximum of {max_results} jobs that are the best fit.
-For each selected job, generate a concise one-line description explaining why it is a good fit.
+IMPORTANT: REJECT any job that is not in Metro Manila or remote-open to Philippines. Do not include overseas roles.
 
-Respond ONLY with a JSON list of objects, each containing:
+Select a maximum of {max_results} jobs that pass ALL criteria above.
+For each selected job, provide a brief reason why it fits our alumni.
+
+Respond ONLY with a JSON list. If NO jobs pass all criteria, return an empty list [].
+Each object must contain:
 - "title": Job title
-- "link": Job URL
-- "reason": A very brief 1-sentence reason why it fits (e.g. "Entry-level AWS role with 1 year experience requirement").
+- "link": Job URL  
+- "reason": 1-sentence reason why it fits (mention location + experience level)
 
-Example response:
+Example:
 [
   {{
     "title": "Cloud Support Associate",
     "link": "https://linkedin.com/jobs/view/123",
-    "reason": "Junior AWS support role requiring 0-2 years experience"
+    "reason": "Metro Manila-based, entry-level AWS role requiring 0-1 year experience."
   }}
 ]
 """
