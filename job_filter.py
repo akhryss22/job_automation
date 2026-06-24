@@ -8,23 +8,153 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 
 CRITERIA = """
-1. LOCATION: Metro Manila, Visayas, Northern Luzon, or fully Remote open to Philippines only.
-   Reject overseas, onsite abroad, or any role with no Philippines mention.
+=== AWS re/Start ALUMNI PROFILE ===
+Graduates of the AWS re/Start programme — an intensive, hands-on cloud training initiative
+by Amazon Web Services. Alumni are career switchers, fresh graduates, and upskillers from
+diverse (often non-IT) backgrounds who retrained into tech. They have:
+  - AWS Certified Cloud Practitioner certification (or actively preparing for it)
+  - Hands-on lab experience: EC2, S3, IAM, VPC, RDS, Lambda, CloudFormation, CLI
+  - Linux command line basics, networking fundamentals, security concepts
+  - Python/Bash scripting exposure
+  - Real-world problem-solving labs and capstone projects
+  - 0 to 2 years of formal IT work experience (may have years of other work experience)
+  - Strong adaptability, motivated career changers — many come from customer service,
+    admin, BPO, teaching, sales, and other backgrounds
 
-2. EXPERIENCE: Junior / entry-level / fresh graduate only. Maximum 0-2 years experience.
-   Reject roles requiring 3+ years, Senior, or Mid-level.
+=== FILTERING RULES (ALL must pass) ===
 
-3. EDUCATION: No strict degree requirement.
-   Prefer roles open to bootcamp graduates, non-traditional backgrounds, or equivalent experience.
+── RULE 1: LOCATION ─────────────────────────────────────────────────────────
+Accept roles located in:
+  - Metro Manila / NCR and surrounding areas (Rizal, Bulacan, Cavite, Laguna, Pampanga)
+  - Cebu City and broader Visayas region
+  - Northern Luzon: Baguio, Clark, Pampanga, La Union, Dagupan
+  - Fully remote work that explicitly accepts Philippines-based applicants
 
-4. ROLE TYPE: AWS, cloud, IT, or transferable roles. Examples:
-   Cloud Support Associate, Technical Support Engineer, IT Helpdesk, Systems/Infrastructure Associate,
-   Junior DevOps, IT Operations, Network Support, Application Support, NOC Engineer,
-   Solutions/Implementation Associate, Cloud Administrator, Technical Consultant,
-   Pre-Sales Engineer, IT Analyst, IT Project Coordinator, Business Analyst (tech-focused).
-   Reject purely managerial, finance-only, HR-only, or unrelated non-tech roles.
+REJECT if:
+  - Role is based overseas (Singapore, USA, UAE, Australia, etc.)
+  - Role requires physical relocation outside the Philippines
+  - No Philippines mention AND no remote option (lean toward reject if ambiguous)
 
-5. DATE: Posted within the last 5 days only. Reject older postings.
+Note: If location info is absent from the job data, do NOT auto-reject —
+the jobs in this list are pre-scraped from Philippines sources. Only reject
+on location if the job explicitly states an overseas base.
+
+── RULE 2: EXPERIENCE LEVEL ─────────────────────────────────────────────────
+Accept:
+  - Entry-level, Junior, Associate, Graduate trainee, Fresh graduate
+  - 0 to 2 years of experience required
+  - Roles that say "no experience required" or "experience is a plus (not required)"
+  - Roles that welcome career shifters, non-traditional backgrounds, or bootcamp grads
+
+REJECT:
+  - Roles explicitly requiring 3+ years of experience
+  - Senior, Lead, Principal, Manager, Director, VP level roles
+  - Roles requiring 5+ years, extensive/deep expertise, or expert-level certifications
+
+── RULE 3: EDUCATION ────────────────────────────────────────────────────────
+Accept:
+  - No degree requirement, or "Bachelor's degree preferred but not required"
+  - Roles open to equivalent work experience, certifications, or training
+  - Roles that list AWS Cloud Practitioner or similar certs as a qualification
+
+REJECT:
+  - Roles with a strict mandatory 4-year CS/IT/Engineering degree
+    (UNLESS the role is otherwise clearly suitable and the degree is just a formality)
+
+── RULE 4: ROLE TYPE — DIRECT CLOUD & IT ROLES ──────────────────────────────
+These are ideal matches — accept freely if entry-level and PH-based:
+
+  Cloud & Infrastructure:
+    Cloud Support Associate, Cloud Engineer (Junior), Cloud Administrator,
+    Cloud Operations Associate, AWS Support Engineer, Cloud Infrastructure Associate,
+    Junior DevOps Engineer, DevOps Associate, Platform Engineer (Associate),
+    Site Reliability Engineer (Entry), Systems Administrator (Junior),
+    Infrastructure Associate, Linux Administrator (Junior),
+    Network Administrator (Junior), Network Support Engineer,
+    NOC Engineer, NOC Analyst, Network Operations Center Staff
+
+  IT Support & Service Desk:
+    IT Support Analyst, IT Help Desk (L1/L2), IT Support Specialist,
+    Technical Support Engineer, Service Desk Analyst, Desktop Support Engineer,
+    IT Operations Staff, Application Support Analyst,
+    Systems Support Engineer, End-User Computing Analyst
+
+  Security & Compliance (Entry):
+    IT Security Analyst (Junior), Cybersecurity Associate,
+    GRC Analyst (Entry), Information Security Associate,
+    SOC Analyst (Tier 1), Vulnerability Assessment Associate
+
+  Data & Monitoring (Entry):
+    Data Operations Associate, IT Monitoring Analyst, Data Center Operations
+
+── RULE 5: ROLE TYPE — TRANSFERABLE ROLES ───────────────────────────────────
+Accept these roles where AWS re/Start skills are genuinely applicable.
+Use judgment: would an AWS-certified career switcher with cloud fundamentals
+and strong soft skills credibly apply for this?
+
+  Consulting & Advisory:
+    Technical Consultant (Associate/Junior), IT Consultant (Entry),
+    Solutions Consultant, Implementation Consultant,
+    Cloud Solutions Associate, Digital Transformation Associate,
+    IT Advisory Associate, Managed Services Consultant (Junior)
+
+  Pre-Sales & Sales Engineering:
+    Pre-Sales Engineer (Associate), Solutions Engineer (Junior),
+    Technical Sales Associate, IT Sales Engineer,
+    Cloud Sales Associate, Inside Sales Engineer (Tech)
+
+  Project & Operations:
+    IT Project Coordinator, IT Project Associate,
+    Delivery Analyst, Service Delivery Associate,
+    IT Operations Coordinator, Technology Associate,
+    IT Procurement Associate, Vendor Management Associate (IT)
+
+  Customer-Facing Tech Roles:
+    Technical Account Associate, Customer Success Associate (Tech/SaaS),
+    Customer Implementation Specialist, Technical Customer Support,
+    Client Success Engineer (Entry), Onboarding Specialist (Tech)
+
+  Analysis & Reporting:
+    Business Analyst (IT/Tech-focused), IT Analyst, Process Analyst (Tech),
+    Data Analyst (Entry, with IT/tech tools focus), Systems Analyst (Junior),
+    IT Risk Analyst (Entry), IT Audit Associate
+
+  Training & Enablement:
+    Technical Trainer (Associate), IT Trainer, Cloud Trainer,
+    Technology Enablement Associate
+
+  Others with clear IT/tech component:
+    Technical Writer (IT), IT Documentation Specialist,
+    Quality Analyst (IT/tech process), ITSM Analyst (Entry)
+
+REJECT these regardless of how they are titled:
+  - Pure finance roles (Accountant, Bookkeeper, Treasury) with no IT component
+  - Pure HR roles (HR Associate, Recruiter) unless it is specifically HRIS/IT
+  - Non-tech sales (Real estate, Insurance, FMCG, direct selling)
+  - Purely managerial or executive roles with no hands-on technical element
+  - Roles requiring deep domain expertise unrelated to IT (e.g., physician, lawyer, engineer PE)
+  - MLM, networking, commission-only recruitment roles disguised as "IT jobs"
+
+── RULE 6: HIRING INTENT ────────────────────────────────────────────────────
+Prefer:
+  - Specific, detailed job description (not a generic "we are always hiring" page)
+  - Recently posted (within the last 5 days)
+  - Clear company name and legitimate employer identity
+  - Roles with defined responsibilities and qualifications
+
+REJECT:
+  - Vague evergreen postings ("Various IT roles — apply anytime")
+  - Postings with no company name or suspicious company identity
+  - Roles posted by unknown entities with no online presence
+
+── RULE 7: CREDIBILITY & FRAUD CHECK ────────────────────────────────────────
+REJECT if any of these red flags appear:
+  - Unrealistic pay promises ("earn 80k/day", "no experience needed, high salary")
+  - Upfront fees, investments, or capital required from the applicant
+  - Commission-only compensation for a tech role with no base salary
+  - MLM / pyramid / referral chain structure described in the role
+  - Overly vague responsibilities ("marketing", "operations", "growth") with no tech detail
+  - Suspicious company with no verifiable identity
 """
 
 
