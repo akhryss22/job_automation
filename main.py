@@ -13,8 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("job_tracker")
 
-# Tab name that triggers the broad LinkedIn search (case-insensitive match)
-NON_HIRING_TAB_KEYWORD = "non-hiring"
+# Tab name matching (case-insensitive, partial match)
+NON_HIRING_KEYWORDS = ["non-hiring", "non hiring"]   # matches both "Non-Hiring Partners" and "Non Hiring Partners"
+SKIP_TAB_KEYWORDS   = ["readme", "instructions", "about", "guide"]  # tabs to completely ignore
 
 
 def process_hiring_partners_tab(sheet, worksheet):
@@ -126,11 +127,20 @@ def run():
         tab_name = worksheet.title.strip().lower()
         logger.info(f"--- Processing tab: '{worksheet.title}' ---")
 
-        if NON_HIRING_TAB_KEYWORD in tab_name:
+        # Skip README/instructions tabs entirely
+        if any(kw in tab_name for kw in SKIP_TAB_KEYWORDS):
+            logger.info(f"Skipping tab '{worksheet.title}' (README/instructions tab).")
+            continue
+
+        # Non-Hiring Partners tab → broad curated company search
+        if any(kw in tab_name for kw in NON_HIRING_KEYWORDS):
             process_non_hiring_tab(sheet, worksheet, max_results=10)
+
+        # All other tabs → company-by-company scraping
         else:
             sheet.init_headers_if_empty(worksheet)
             process_hiring_partners_tab(sheet, worksheet)
+
 
     logger.info("All tabs processed. Run complete.")
 
