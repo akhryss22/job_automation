@@ -73,7 +73,7 @@ def process_non_hiring_tab(sheet, worksheet, max_results=10):
 
     # Clear previous results (keep header row)
     try:
-        worksheet.batch_clear(["A2:D200"])
+        worksheet.batch_clear(["A2:C200"])
     except Exception as e:
         logger.warning(f"Could not clear previous results: {e}")
 
@@ -93,14 +93,13 @@ def process_non_hiring_tab(sheet, worksheet, max_results=10):
         worksheet.update(range_name="A2", values=[["No matching roles found this week."]])
         return
 
-    # Write results: Job Title | Company | Link | Why it fits
+    # Write results: Job Title | Company | Link
     rows = []
     for job in selected:
         rows.append([
             job.get("title", ""),
             job.get("company", ""),
-            job.get("link", ""),
-            job.get("reason", "")
+            job.get("link", "")
         ])
 
     worksheet.update(range_name="A2", values=rows)

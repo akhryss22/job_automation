@@ -9,55 +9,46 @@ MAX_RETRIES = 3
 
 CRITERIA = """
 CANDIDATE PROFILE:
-Graduates of the AWS re/Start programme — a rigorous, hands-on cloud training program.
-They are diverse: career switchers, upskillers, and people from non-IT backgrounds who retrained into tech.
-Most hold or are preparing for AWS Certified Cloud Practitioner. They have hands-on lab experience
-but limited formal IT work history (0–2 years max).
+Graduates of the AWS re/Start programme — career switchers and upskillers with hands-on
+cloud lab training. Most are AWS Certified Cloud Practitioners (or near-certified).
+Limited formal IT work history: 0–2 years max.
 
-FILTERING RULES (all must pass):
+FILTERING RULES (ALL must pass):
 
 1. LOCATION:
-   Accept roles based in ANY of the following:
+   Accept ONLY roles in:
    - Metro Manila / NCR, Philippines
    - Cebu City / Visayas, Philippines
-   - Northern Luzon (e.g. Baguio, Clark, Pampanga), Philippines
-   - Fully Remote work open to Philippines-based applicants
-   REJECT: overseas, onsite abroad, or no Philippines mention at all.
-   If location is unclear, lean toward REJECTION.
+   - Northern Luzon (Baguio, Clark, Pampanga), Philippines
+   - Fully Remote open to Philippines-based applicants
+   REJECT everything else. No Philippines mention = REJECT.
 
 2. ROLE RELEVANCE / SKILL MATCH:
-   Ideal direct roles:
-   - Cloud Support Associate, Cloud Engineer (Junior), Cloud Administrator
-   - Systems/Infrastructure Associate, Junior DevOps, Cloud Operations
-   - NOC Engineer, Network Support Engineer, Linux Administrator
-   - Technical Support Engineer, IT Helpdesk, Application Support
-   - Solutions/Implementation Associate, IT Operations
-   Also accept strong transferable roles:
-   - Technical Consultant, Pre-Sales Engineer, IT Sales
-   - IT Project Coordinator, Business Analyst (tech-focused)
-   - Technical Trainer, IT Analyst
-   Use judgment: if an AWS-certified career switcher could credibly apply, INCLUDE it.
-   REJECT: purely managerial, finance-only, HR-only, or unrelated sales (e.g. real estate).
+   Accept direct cloud/IT roles:
+     Cloud Support Associate, Technical Support Engineer, Systems/Infrastructure Associate,
+     Junior DevOps, IT Operations, Network Support, Application Support,
+     NOC Engineer, Solutions/Implementation Associate, Cloud Administrator,
+     Cloud Engineer (Junior), IT Helpdesk, Linux Administrator
+   Also accept transferable roles an AWS-certified career switcher could realistically get:
+     Technical Consultant, Pre-Sales Engineer, IT Analyst, IT Project Coordinator,
+     Business Analyst (tech-focused), Technical Trainer, IT Sales
+   REJECT: managerial, finance-only, HR-only, non-tech sales, or unrelated roles.
 
-3. ENTRY-LEVEL SIGNALS — Prioritize roles with these keywords:
-   Junior, Associate, Entry-level, Fresh graduate, 0–1 year, 0–2 years experience, No experience required
-   REJECT roles that require:
-   - 3+ years of experience
+3. ENTRY-LEVEL SIGNALS:
+   PRIORITIZE roles with: Junior, Associate, Entry-level, Fresh graduate, 0–1 yr, 0–2 years
+   REJECT roles requiring:
+   - 3+ years experience
    - Senior or Mid-level designation
    - Multiple mandatory certifications (e.g. CCNP + AWS + Azure all required)
 
-4. HIRING INTENT — Prefer roles that show active hiring:
+4. HIRING INTENT:
+   PREFER roles that show active hiring:
+   - Specific job description (not a vague "we're always hiring" page)
    - Recently posted (within 5 days)
-   - Specific job description (not vague evergreen "we're always hiring" pages)
    - Multiple openings at the company is a positive signal
+   REJECT vague evergreen postings with no real job description.
 
 5. DATE: Posted within the last 5 days. Discard older postings.
-
-COMPANY PRIORITY TAG — add a "priority" field to each result:
-   - "Partner" if the company is a known AWS re/Start hiring partner
-   - "Target" if the company is a known target partner being pursued
-   - "Prospect" for all others
-   (If unsure, default to "Prospect")
 """
 
 
@@ -185,33 +176,29 @@ def evaluate_jobs_list(company_name, jobs, max_results=8):
     prompt = f"""
 You are a career placement officer for AWS re/Start programme alumni in the Philippines.
 
-Alumni profile: AWS Certified Cloud Practitioners (or near-certified), career switchers
-from diverse backgrounds, 0–2 years formal IT work experience, hands-on cloud lab training.
+Alumni: AWS Certified Cloud Practitioners (or near-certified), career switchers,
+0–2 years formal IT work experience, hands-on cloud lab training.
 
-Evaluate this list of jobs from "{company_name}" strictly against ALL criteria below:
+Evaluate this list of jobs from "{company_name}" strictly against ALL criteria:
 {CRITERIA}
 
-Jobs list:
+Jobs:
 {jobs_data}
 
-IMPORTANT REMINDERS:
-- Accept roles in Metro Manila, Cebu/Visayas, Northern Luzon, OR fully remote open to Philippines.
-- REJECT overseas roles, 3+ year experience requirements, and purely senior/managerial roles.
-- Prioritize roles with entry-level signals: Junior, Associate, Entry-level, Fresh graduate, 0-2 yrs.
+KEY REMINDERS:
+- Accept Metro Manila, Cebu/Visayas, Northern Luzon, OR fully remote open to Philippines.
+- REJECT overseas, 3+ year requirements, Senior/Mid-level roles, vague evergreen postings.
+- Prioritize: Junior, Associate, Entry-level, Fresh graduate, 0–2 years signals.
 
-Select up to {max_results} jobs that pass ALL criteria. Return [] if none qualify.
+Select up to {max_results} jobs passing ALL criteria. Return [] if none qualify.
 
-Return a JSON array. Each item must have:
+Return a JSON array. Each item must have ONLY:
 - "title": job title
 - "link": job URL
-- "reason": 1-sentence reason mentioning location and seniority level
-- "priority": one of "Partner", "Target", or "Prospect" based on whether this company
-  is a known AWS re/Start hiring partner, a target partner being pursued, or a new prospect
+- "priority": "Partner", "Target", or "Prospect"
 
 Example:
-[{{"title": "Cloud Support Associate", "link": "https://linkedin.com/jobs/view/123",
-  "reason": "Metro Manila-based, entry-level AWS role, 0-1 year experience required.",
-  "priority": "Partner"}}]
+[{{"title": "Cloud Support Associate", "link": "https://linkedin.com/jobs/view/123", "priority": "Prospect"}}]
 """
     selected = call_ai(prompt, context=f"— evaluate for {company_name}")
     logger.info(f"AI matched {len(selected)} jobs for {company_name}")
