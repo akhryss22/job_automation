@@ -8,47 +8,23 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 
 CRITERIA = """
-CANDIDATE PROFILE:
-Graduates of the AWS re/Start programme — career switchers and upskillers with hands-on
-cloud lab training. Most are AWS Certified Cloud Practitioners (or near-certified).
-Limited formal IT work history: 0–2 years max.
+1. LOCATION: Metro Manila, Visayas, Northern Luzon, or fully Remote open to Philippines only.
+   Reject overseas, onsite abroad, or any role with no Philippines mention.
 
-FILTERING RULES (ALL must pass):
+2. EXPERIENCE: Junior / entry-level / fresh graduate only. Maximum 0-2 years experience.
+   Reject roles requiring 3+ years, Senior, or Mid-level.
 
-1. LOCATION:
-   Accept ONLY roles in:
-   - Metro Manila / NCR, Philippines
-   - Cebu City / Visayas, Philippines
-   - Northern Luzon (Baguio, Clark, Pampanga), Philippines
-   - Fully Remote open to Philippines-based applicants
-   REJECT everything else. No Philippines mention = REJECT.
+3. EDUCATION: No strict degree requirement.
+   Prefer roles open to bootcamp graduates, non-traditional backgrounds, or equivalent experience.
 
-2. ROLE RELEVANCE / SKILL MATCH:
-   Accept direct cloud/IT roles:
-     Cloud Support Associate, Technical Support Engineer, Systems/Infrastructure Associate,
-     Junior DevOps, IT Operations, Network Support, Application Support,
-     NOC Engineer, Solutions/Implementation Associate, Cloud Administrator,
-     Cloud Engineer (Junior), IT Helpdesk, Linux Administrator
-   Also accept transferable roles an AWS-certified career switcher could realistically get:
-     Technical Consultant, Pre-Sales Engineer, IT Analyst, IT Project Coordinator,
-     Business Analyst (tech-focused), Technical Trainer, IT Sales
-   REJECT: managerial, finance-only, HR-only, non-tech sales, or unrelated roles.
+4. ROLE TYPE: AWS, cloud, IT, or transferable roles. Examples:
+   Cloud Support Associate, Technical Support Engineer, IT Helpdesk, Systems/Infrastructure Associate,
+   Junior DevOps, IT Operations, Network Support, Application Support, NOC Engineer,
+   Solutions/Implementation Associate, Cloud Administrator, Technical Consultant,
+   Pre-Sales Engineer, IT Analyst, IT Project Coordinator, Business Analyst (tech-focused).
+   Reject purely managerial, finance-only, HR-only, or unrelated non-tech roles.
 
-3. ENTRY-LEVEL SIGNALS:
-   PRIORITIZE roles with: Junior, Associate, Entry-level, Fresh graduate, 0–1 yr, 0–2 years
-   REJECT roles requiring:
-   - 3+ years experience
-   - Senior or Mid-level designation
-   - Multiple mandatory certifications (e.g. CCNP + AWS + Azure all required)
-
-4. HIRING INTENT:
-   PREFER roles that show active hiring:
-   - Specific job description (not a vague "we're always hiring" page)
-   - Recently posted (within 5 days)
-   - Multiple openings at the company is a positive signal
-   REJECT vague evergreen postings with no real job description.
-
-5. DATE: Posted within the last 5 days. Discard older postings.
+5. DATE: Posted within the last 5 days only. Reject older postings.
 """
 
 
@@ -174,31 +150,22 @@ def evaluate_jobs_list(company_name, jobs, max_results=8):
     jobs_data = json.dumps(jobs, indent=2)
 
     prompt = f"""
-You are a career placement officer for AWS re/Start programme alumni in the Philippines.
+You are a job filter for AWS re/Start programme alumni in the Philippines.
 
-Alumni: AWS Certified Cloud Practitioners (or near-certified), career switchers,
-0–2 years formal IT work experience, hands-on cloud lab training.
-
-Evaluate this list of jobs from "{company_name}" strictly against ALL criteria:
+Filter this list of jobs from "{company_name}" using these criteria:
 {CRITERIA}
 
 Jobs:
 {jobs_data}
 
-KEY REMINDERS:
-- Accept Metro Manila, Cebu/Visayas, Northern Luzon, OR fully remote open to Philippines.
-- REJECT overseas, 3+ year requirements, Senior/Mid-level roles, vague evergreen postings.
-- Prioritize: Junior, Associate, Entry-level, Fresh graduate, 0–2 years signals.
+Return a JSON array of up to {max_results} jobs that pass ALL criteria.
+Return [] if none qualify.
 
-Select up to {max_results} jobs passing ALL criteria. Return [] if none qualify.
-
-Return a JSON array. Each item must have ONLY:
+Each item must have ONLY:
 - "title": job title
 - "link": job URL
-- "priority": "Partner", "Target", or "Prospect"
 
-Example:
-[{{"title": "Cloud Support Associate", "link": "https://linkedin.com/jobs/view/123", "priority": "Prospect"}}]
+Example: [{{"title": "Cloud Support Associate", "link": "https://linkedin.com/jobs/view/123"}}]
 """
     selected = call_ai(prompt, context=f"— evaluate for {company_name}")
     logger.info(f"AI matched {len(selected)} jobs for {company_name}")
@@ -213,7 +180,5 @@ def format_jobs_caption(company_name, selected_jobs):
     for job in selected_jobs:
         title = job.get("title", "")
         link = job.get("link", "")
-        priority = job.get("priority", "")
-        tag = f" [{priority}]" if priority else ""
-        lines.append(f"- [{title}]({link}){tag}")
+        lines.append(f"- [{title}]({link})")
     return "\n".join(lines)
