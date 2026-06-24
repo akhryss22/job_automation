@@ -1,11 +1,9 @@
-name: Weekly Job Monitor & Posting Automation
+name: "Job Monitor"
 
 on:
-  schedule:
-    # Runs every Friday at 9:00 AM UTC (5:00 PM standard time for PH/SG)
-    - cron: '0 9 * * 5'
   workflow_dispatch:
-    # Allows manually running the workflow from the Actions tab on GitHub
+  schedule:
+    - cron: '0 9 * * 5'
 
 jobs:
   run-automation:
