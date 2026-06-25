@@ -160,13 +160,13 @@ REJECT if any of these red flags appear:
 
 # ── Groq (primary) ────────────────────────────────────────
 def call_groq(prompt):
-    """Calls Groq API (llama3-8b-8192 — 500k tokens/day). Returns parsed JSON or raises."""
+    """Calls Groq API (llama-3.1-8b-instant — 500k tokens/day). Returns parsed JSON or raises."""
     from groq import Groq
     client = Groq(api_key=config.GROQ_API_KEY)
     for attempt in range(MAX_RETRIES):
         try:
             response = client.chat.completions.create(
-                model="llama3-8b-8192",
+                model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.1,
@@ -193,14 +193,14 @@ def call_groq(prompt):
 
 # ── Gemini (fallback) ──────────────────────────────────────
 def call_gemini(prompt):
-    """Calls Gemini 2.0-flash as fallback. Returns parsed JSON list or raises."""
+    """Calls Gemini as fallback. Returns parsed JSON list or raises."""
     from google import genai
     from google.genai import types
     client = genai.Client(api_key=config.GEMINI_API_KEY)
     for attempt in range(MAX_RETRIES):
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-1.5-flash-latest",
                 contents=prompt,
                 config=types.GenerateContentConfig(response_mime_type="application/json")
             )
