@@ -13,9 +13,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("job_tracker")
 
-# Tab name matching (case-insensitive, partial match)
-NON_HIRING_KEYWORDS = ["non-hiring", "non hiring"]   # matches both "Non-Hiring Partners" and "Non Hiring Partners"
-SKIP_TAB_KEYWORDS   = ["readme", "instructions", "about", "guide"]  # tabs to completely ignore
+# Tabs to skip entirely (case-insensitive partial match)
+SKIP_TAB_KEYWORDS = ["readme", "instructions", "about", "guide", "non-hiring", "non hiring"]
 
 
 def process_hiring_partners_tab(sheet, worksheet):
@@ -33,7 +32,7 @@ def process_hiring_partners_tab(sheet, worksheet):
         company = item["company"]
         url = item["url"]
 
-        logger.info(f"Processing row {row}: {company} ({url or 'no URL - will guess'})")
+        logger.info(f"Processing row {row}: {company} ({url or 'no URL'})")
 
         try:
             scrape_result = scraper.get_jobs_for_company(company, url)
@@ -61,53 +60,11 @@ def process_hiring_partners_tab(sheet, worksheet):
             except Exception:
                 pass
 
-    logger.info(f"Tab '{worksheet.title}' done. {matched_count} companies had matches.")
-
-
-def process_non_hiring_tab(sheet, worksheet, max_results=10):
-    """
-    Processes the Non-Hiring Partners tab: broad LinkedIn search,
-    AI filters top matches, writes results into the tab.
-    """
-    logger.info(f"Tab '{worksheet.title}': Running broad LinkedIn search (max {max_results} results)...")
-
-    # Clear previous results (keep header row)
-    try:
-        worksheet.batch_clear(["A2:C200"])
-    except Exception as e:
-        logger.warning(f"Could not clear previous results: {e}")
-
-    # Multi-source search: LinkedIn company pages + Indeed Philippines
-    raw_jobs = scraper.search_broad(max_results=60)
-
-    if not raw_jobs:
-        logger.info("All sources returned no results.")
-        worksheet.update(range_name="A2", values=[["No results found this week."]])
-        return
-
-    # Filter using same criteria
-    selected = job_filter.evaluate_jobs_list("LinkedIn Broad Search", raw_jobs, max_results=max_results)
-
-    if not selected:
-        logger.info("AI found no matching jobs from broad search.")
-        worksheet.update(range_name="A2", values=[["No matching roles found this week."]])
-        return
-
-    # Write results: Job Title | Company | Link
-    rows = []
-    for job in selected:
-        rows.append([
-            job.get("title", ""),
-            job.get("company", ""),
-            job.get("link", "")
-        ])
-
-    worksheet.update(range_name="A2", values=rows)
-    logger.info(f"Tab '{worksheet.title}': Wrote {len(rows)} matching jobs.")
+    logger.info(f"Tab '{worksheet.title}' done. {matched_count}/{len(companies)} companies had matches.")
 
 
 def run():
-    logger.info("Starting AWS Re/Start Job Tracker...")
+    logger.info("Starting AWS re/Start Job Tracker...")
 
     warnings = config.validate_config()
     for w in warnings:
@@ -126,20 +83,12 @@ def run():
         tab_name = worksheet.title.strip().lower()
         logger.info(f"--- Processing tab: '{worksheet.title}' ---")
 
-        # Skip README/instructions tabs entirely
         if any(kw in tab_name for kw in SKIP_TAB_KEYWORDS):
-            logger.info(f"Skipping tab '{worksheet.title}' (README/instructions tab).")
+            logger.info(f"Skipping tab '{worksheet.title}'.")
             continue
 
-        # Non-Hiring Partners tab → broad curated company search
-        if any(kw in tab_name for kw in NON_HIRING_KEYWORDS):
-            process_non_hiring_tab(sheet, worksheet, max_results=10)
-
-        # All other tabs → company-by-company scraping
-        else:
-            sheet.init_headers_if_empty(worksheet)
-            process_hiring_partners_tab(sheet, worksheet)
-
+        sheet.init_headers_if_empty(worksheet)
+        process_hiring_partners_tab(sheet, worksheet)
 
     logger.info("All tabs processed. Run complete.")
 
