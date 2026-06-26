@@ -94,6 +94,25 @@ def is_within_5_days(date_str_or_datetime):
     return True
 
 
+def is_philippines_linkedin_url(url):
+    """
+    Checks if a LinkedIn URL is Philippines-focused (ph.linkedin.com) or neutral (www.linkedin.com).
+    Rejects foreign subdomains (e.g. be.linkedin.com, es.linkedin.com, id.linkedin.com).
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+        netloc = parsed.netloc.lower()
+        parts = netloc.split('.')
+        if "linkedin.com" in netloc:
+            if len(parts) >= 3:
+                subdomain = parts[0]
+                if subdomain not in ['ph', 'www']:
+                    return False
+        return True
+    except Exception:
+        return True
+
+
 def fetch_linkedin_company_jobs(handle, company_name):
     """
     Scrapes the public LinkedIn company jobs page using the company handle.
@@ -134,6 +153,10 @@ def fetch_linkedin_company_jobs(handle, company_name):
             datetime_attr = time_tag.get("datetime", "") if time_tag else ""
 
             if title and is_within_5_days(datetime_attr or date_text):
+                # Filter out foreign LinkedIn URLs
+                if not is_philippines_linkedin_url(clean_link):
+                    logger.info(f"Skipping foreign LinkedIn job URL: {clean_link}")
+                    continue
                 jobs.append({
                     "title": title,
                     "link": clean_link,
@@ -312,6 +335,59 @@ def search_broad(max_results=60):
 
 
 
+def is_generic_career_link(link_text, link_url, base_url):
+    """
+    Checks if a link is a generic navigation link (like 'About Us', 'Contact', social media,
+    or the careers page itself) rather than a specific job posting.
+    """
+    text = link_text.lower().strip()
+    url = link_url.lower().strip()
+    base = base_url.lower().strip()
+    
+    # Remove query params and fragments/anchors for base matching
+    base_clean = base.split('?')[0].split('#')[0].rstrip('/')
+    url_clean = url.split('?')[0].split('#')[0].rstrip('/')
+    
+    # If the URL is exactly the base URL (careers main page or section anchor)
+    if url_clean == base_clean:
+        return True
+        
+    # Generic exact texts (after stripping non-alphanumeric characters)
+    generic_texts = {
+        "about us", "about", "contact us", "contact", "privacy policy", "privacy", 
+        "terms of service", "terms", "cookies", "sign in", "login", "sign up", 
+        "register", "home", "faq", "help", "careers", "career portal", "all jobs", 
+        "view all jobs", "view all", "search", "search jobs", "newsletter", 
+        "subscribe", "facebook", "twitter", "linkedin", "instagram", "youtube", 
+        "social media", "next", "previous", "next page", "previous page", 
+        "skip to content", "skip to main content", "menu", "navigation", "here", 
+        "click here", "back", "back to top", "business area", "locations", 
+        "about softwareone", "investors", "partner programs", "media releases", 
+        "our story", "categories", "english", "espanol", "español", "deutsch", 
+        "japanese", "日本語", "french", "spanish", "german", "italian", "korean", 
+        "chinese", "vietnamese", "thai", "indonesian", "portuguese", "media", 
+        "news", "press", "press releases", "blog", "events", "resources", 
+        "solutions", "services", "products", "partners", "brand", "vision", 
+        "culture", "diversity", "sustainability", "history"
+    }
+    
+    clean_text = "".join(c for c in text if c.isalnum() or c.isspace()).strip()
+    if clean_text in generic_texts:
+        return True
+        
+    # Generic keywords in URL (partial match)
+    generic_url_keywords = [
+        "/login", "/signin", "/register", "/signup", "/about", "/contact", 
+        "/privacy", "/terms", "/cookie", "/faq", "facebook.com", "twitter.com", 
+        "linkedin.com", "instagram.com", "youtube.com", "glassdoor.com", 
+        "mailto:", "tel:", "javascript:", "/social", "share="
+    ]
+    if any(kw in url for kw in generic_url_keywords):
+        return True
+        
+    return False
+
+
 def fetch_careers_page_jobs(url):
     """
     Fetches raw text and links from standard company careers websites.
@@ -364,7 +440,21 @@ def get_jobs_for_company(company_name, url):
         logger.warning(f"Could not extract LinkedIn handle from: {url}")
         return {"type": "jobs_list", "data": []}
 
+    # Custom careers page URL
     content = fetch_careers_page_jobs(url)
     if content:
-        return {"type": "raw_page", "data": content}
-    return {"type": "jobs_list", "data": []}
+        # Filter out generic/navigation links
+        filtered_links = [
+            l for l in content["links"] 
+            if not is_generic_career_link(l["text"], l["url"], url)
+        ]
+        if filtered_links:
+            content["links"] = filtered_links
+            return {"type": "raw_page", "data": content}
+        else:
+            logger.info(f"No specific job links found on careers page {url} after filtering. Falling back to LinkedIn...")
+
+    # Fallback: guess LinkedIn handle from company name
+    slug = re.sub(r'[^a-z0-9]+', '-', company_name.lower()).strip('-')
+    jobs = fetch_linkedin_company_jobs(slug, company_name)
+    return {"type": "jobs_list", "data": jobs}

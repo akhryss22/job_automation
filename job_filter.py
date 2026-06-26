@@ -214,6 +214,24 @@ def call_gemini(prompt):
             else:
                 raise
 
+import urllib.parse
+
+def normalize_url(url):
+    """Normalizes a URL for comparison."""
+    if not url:
+        return ""
+    url = url.strip()
+    if url.endswith('/'):
+        url = url[:-1]
+    try:
+        parsed = urllib.parse.urlparse(url)
+        scheme = parsed.scheme.lower()
+        netloc = parsed.netloc.lower()
+        path = parsed.path
+        return f"{scheme}://{netloc}{path}"
+    except Exception:
+        return url.lower()
+
 
 def call_ai(prompt, context=""):
     """
@@ -253,6 +271,14 @@ def extract_jobs_from_raw_page(company_name, page_text, links):
     prompt = f"""
 You are a job scraper. Extract all open job listings from this careers page for "{company_name}".
 
+CRITICAL INSTRUCTIONS:
+- You must ONLY extract jobs that are actually listed in the Webpage Text below.
+- The "link" for each job MUST be chosen from the Webpage Links list below.
+- Do NOT extract navigation links or generic URLs (like the main Careers page, Contact Us, About Us, Privacy Policy, Login, Sign Up, or Social Media URLs). The "link" MUST be a direct link to the specific job description.
+- Do NOT hallucinate or invent any jobs.
+- Do NOT invent or make up any URLs.
+- If no jobs are listed, return an empty array [].
+
 Webpage Text:
 {page_text[:8000]}
 
@@ -260,12 +286,29 @@ Webpage Links:
 {formatted_links}
 
 Return a JSON array of objects with "title" and "link" fields only.
-If no jobs found, return an empty array [].
 Example: [{{"title": "Cloud Support Associate", "link": "https://company.com/jobs/1"}}]
 """
     jobs = call_ai(prompt, context=f"— extract for {company_name}")
-    logger.info(f"AI extracted {len(jobs)} jobs from raw page for {company_name}")
-    return jobs
+    
+    # Python-side validation: ensure links match the input links list
+    valid_urls_norm = {normalize_url(l["url"]): l["url"] for l in links if l.get("url")}
+    
+    valid_extracted = []
+    for job in jobs:
+        title = job.get("title", "").strip()
+        link = job.get("link", "").strip()
+        if title and link:
+            norm_link = normalize_url(link)
+            if norm_link in valid_urls_norm:
+                valid_extracted.append({
+                    "title": title,
+                    "link": valid_urls_norm[norm_link]
+                })
+            else:
+                logger.warning(f"Discarding hallucinated link in extraction for {company_name}: {link}")
+                
+    logger.info(f"AI extracted {len(valid_extracted)} validated jobs from raw page for {company_name}")
+    return valid_extracted
 
 
 def evaluate_jobs_list(company_name, jobs, max_results=8):
@@ -282,10 +325,11 @@ def evaluate_jobs_list(company_name, jobs, max_results=8):
     prompt = f"""
 You are a job filter for AWS re/Start programme alumni in the Philippines.
 
-IMPORTANT CONTEXT: All jobs in this list were already scraped from Philippines-based company
-pages (LinkedIn PH companies) or Indeed Philippines. Location is already pre-filtered.
-Only reject on location if the job explicitly says it is based overseas (e.g. "Singapore",
-"USA", "Dubai") or explicitly requires relocation abroad.
+CRITICAL INSTRUCTIONS:
+- You must ONLY select jobs from the "Jobs" list provided below.
+- Do NOT generate, invent, or modify any job titles or URLs.
+- The output URLs must match the input URLs EXACTLY.
+- If none of the provided jobs qualify, you MUST return an empty list `[]`.
 
 Filter this list of jobs from "{company_name}" using these criteria:
 {CRITERIA}
@@ -307,12 +351,28 @@ Return [] if none qualify.
 Each item must have ONLY:
 - "title": job title
 - "link": job URL
-
-Example: [{{"title": "Cloud Support Associate", "link": "https://ph.indeed.com/viewjob?jk=abc123"}}]
 """
     selected = call_ai(prompt, context=f"— evaluate for {company_name}")
-    logger.info(f"AI matched {len(selected)} jobs for {company_name}")
-    return selected
+    
+    # Python-side validation: ensure links match the input list
+    input_jobs_by_norm_link = {normalize_url(j.get("link")): j for j in jobs if j.get("link")}
+    
+    valid_selected = []
+    for s_job in selected:
+        s_link = s_job.get("link", "").strip()
+        if s_link:
+            norm_link = normalize_url(s_link)
+            if norm_link in input_jobs_by_norm_link:
+                orig_job = input_jobs_by_norm_link[norm_link]
+                valid_selected.append({
+                    "title": s_job.get("title", "").strip() or orig_job.get("title"),
+                    "link": orig_job.get("link")
+                })
+            else:
+                logger.warning(f"Discarding hallucinated link in evaluation for {company_name}: {s_link}")
+                
+    logger.info(f"AI matched {len(valid_selected)} validated jobs for {company_name}")
+    return valid_selected
 
 
 def format_jobs_caption(company_name, selected_jobs):
